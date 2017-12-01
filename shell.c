@@ -34,7 +34,29 @@
  * 0 if the command is not built in
  */
 int shell_builtin(JobList* jobs, char** command) {
-  return 0;
+
+  /* 1. change dir to get to built ins
+     2. use getenv to look around
+     3. strcmp to see if in env
+     4. exit
+   */
+  if ((strcmp(command[0],"exit" )==0) || (strcmp(command[0],"help")==0) || (strcmp(command[0],"cd" )==0)){
+    if (strcmp(command[0],"exit" )==0){
+      exit(0)
+    }
+    elif (strcmp(command[0],"help" )==0){
+      printf("exit\nhelp\ncd\n");
+    }
+    elif ((strcmp(command[0],"cd" )==0)){
+      if (command[1] != "\0"){
+	chdir(command[1]);
+      }
+    }
+    return 1;
+  }
+  else {
+    return 0;
+  }
 }
 
 
