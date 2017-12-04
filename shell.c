@@ -40,23 +40,26 @@ int shell_builtin(JobList* jobs, char** command) {
      3. strcmp to see if in env
      4. exit
    */
-  if ((strcmp(command[0],"exit" )==0) || (strcmp(command[0],"help")==0) || (strcmp(command[0],"cd" )==0)){
-    if (strcmp(command[0],"exit" )==0){
-      exit(0)
-    }
-    elif (strcmp(command[0],"help" )==0){
-      printf("exit\nhelp\ncd\n");
-    }
-    elif ((strcmp(command[0],"cd" )==0)){
-      if (command[1] != "\0"){
-	chdir(command[1]);
-      }
-    }
-    return 1;
+  if (strcmp(command[0],"exit" )==0){
+    exit(0); //IS THE GOAL TO EXIT ENTIRELY OR STILL RETURN TRUE? WHICH EXIT
   }
+  else if (strcmp(command[0],"help" ) == 0){
+    printf("exit\nhelp\ncd\n");
+  }
+  else if ((strcmp(command[0],"cd" ) == 0)){
+    if (command[1] != NULL){
+      chdir(command[1]);
+    }
+    else{
+      chdir(getenv("HOME"));
+    }
+  }
+  
   else {
     return 0;
   }
+
+  return 1;
 }
 
 
@@ -75,7 +78,13 @@ int shell_builtin(JobList* jobs, char** command) {
  * 1 if process pid has stopped     (Part 3)
  */
 int shell_wait_fg(pid_t pid) {
-  return -1;
+  int child_status;
+  if (-1 == waitpid(pid, &child_status, 0)){
+    perror("Error");
+    exit(-1);
+    return 1;
+  }
+  return 0;
 }
 
 /**
@@ -98,9 +107,34 @@ int shell_wait_fg(pid_t pid) {
  * 1 if the foreground process stopped       (Part 3)
  */
 int shell_run_job(JobList* jobs, char** command, int foreground) {
-  return -1;
+  pid_t pid = fork();
+  JobStatus status;
+  if (foreground == 0) {
+    status = 3
+  }
+  else{
+    status = 1
+  }
+  
+  Job* job = job_save(jobs, pid, command, status)
+  if (pid == 0){
+    int ex = execvp(command[0], command);//QUESTION: ONCE THIS IS DOEN IS THE JOB DONE EXECUTING?
+    if( ex == -1){
+      perror("Error");
+      exit(-1); 
+    }
+    if (foreground == 0){
+      job_print(jobs, job);
+    }
+    else{
+      job_delete(jobs, job);
+    }
+  }
+  else{
+    shell_wait_fg(pid); 
+  }
+  return 0;
 }
-
 
 /**
  * Main shell loop: read, parse, execute.
@@ -117,6 +151,10 @@ int main(int argc, char** argv) {
   using_history();
   read_history(HIST_FILE);
 
+  //JOBLIST, 6.1
+  JobList* mahJobs = joblist_create();
+  
+  
   // Until ^D (EOF), read command line.
   char* line = NULL;
   while ((line = readline(PROMPT))) {
@@ -130,15 +168,21 @@ int main(int argc, char** argv) {
     free(line);
 
     // Replace me!  This just echos the command.
-    if (command){
+    /*  if (command){
       command_print(command);
-      printf("\n");
++      printf("\n");
       // Currently, we free every command array immediately upon
       // completion of the loop body.  WHEN YOU IMPLEMENT PART 2, YOU
       // MUST RETHINK THIS.
       command_free(command);
+      } */
+
+      int built = shell_builtin(mahJobs ,command);
+      if (built == 0){
+	shell_run_job(mahJobs, command, 0);
+      }
     }
-  }
+  
   // If ^D (EOF), do the same thing as for the exit command.
   // ...
 
