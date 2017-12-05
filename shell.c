@@ -33,13 +33,17 @@
  * 1 if the command is built in
  * 0 if the command is not built in
  */
+
+/*void jobComHelp(JobList* jobs, Job* job){
+  if job_get_status(jobs, job){//If Background
+      job_print(jobs, job);
+    }
+    }*/
+
+
+
 int shell_builtin(JobList* jobs, char** command) {
 
-  /* 1. change dir to get to built ins
-     2. use getenv to look around
-     3. strcmp to see if in env
-     4. exit
-   */
   if (strcmp(command[0],"exit" )==0){
     exit(0); //IS THE GOAL TO EXIT ENTIRELY OR STILL RETURN TRUE? WHICH EXIT
   }
@@ -53,6 +57,9 @@ int shell_builtin(JobList* jobs, char** command) {
     else{
       chdir(getenv("HOME"));
     }
+  }
+  else if ((strcmp(command[0],"jobs" ) == 0)){
+    job_iter(jobs, job_print);//DOUBLE CHECK 
   }
   
   else {
@@ -79,13 +86,15 @@ int shell_builtin(JobList* jobs, char** command) {
  */
 int shell_wait_fg(pid_t pid) {
   int child_status;
+
   if (-1 == waitpid(pid, &child_status, 0)){
     perror("Error");
     exit(-1);
     return 1;
   }
+
   return 0;
-}
+}//DOES THIS RUN INTO PROBLEMS WITH ALWAYS RUNNING BACKGROUND JOBS????????
 
 /**
  * Fork and exec the requested program in the foreground (Part 1)
@@ -110,30 +119,44 @@ int shell_run_job(JobList* jobs, char** command, int foreground) {
   pid_t pid = fork();
   JobStatus status;
   if (foreground == 0) {
-    status = 3
+    status = 3;
   }
   else{
-    status = 1
+    status = 1;
   }
-  
-  Job* job = job_save(jobs, pid, command, status)
+  Job* job = job_save(jobs, pid, command, status);
+
   if (pid == 0){
     int ex = execvp(command[0], command);//QUESTION: ONCE THIS IS DOEN IS THE JOB DONE EXECUTING?
+    
     if( ex == -1){
       perror("Error");
       exit(-1); 
     }
+
     if (foreground == 0){
       job_print(jobs, job);
     }
+
     else{
       job_delete(jobs, job);
     }
   }
+
   else{
-    shell_wait_fg(pid); 
+    if (foreground ==1){//DOUBLE CHECK IF WE NEED TO SPECIFY HERE
+      shell_wait_fg(pid); 
+    }
   }
+
   return 0;
+}
+
+void backJobHelp(JobList* jobs, Job* job){
+  if (waitpid(-1, WNOHANG) > 0){
+    job_set_status(jobs, job, 4);
+    job_print(jobs, job);
+    job_delete(jobs, job);
 }
 
 /**
@@ -169,8 +192,7 @@ int main(int argc, char** argv) {
 
     // Replace me!  This just echos the command.
     /*  if (command){
-      command_print(command);
-+      printf("\n");
+      command_print(command); +      printf("\n");
       // Currently, we free every command array immediately upon
       // completion of the loop body.  WHEN YOU IMPLEMENT PART 2, YOU
       // MUST RETHINK THIS.
@@ -181,6 +203,8 @@ int main(int argc, char** argv) {
       if (built == 0){
 	shell_run_job(mahJobs, command, 0);
       }
+      
+      job_iter(mahJobs, backJobHelp);
     }
   
   // If ^D (EOF), do the same thing as for the exit command.
