@@ -34,23 +34,19 @@
  * 0 if the command is not built in
  */
 
-/*void jobComHelp(JobList* jobs, Job* job){
-  if job_get_status(jobs, job){//If Background
-      job_print(jobs, job);
-    }
-    }*/
-
-
-
 int shell_builtin(JobList* jobs, char** command) {
-
+  //check through if statements to see if command is built in
   if (strcmp(command[0],"exit" )==0){
-    exit(0); //IS THE GOAL TO EXIT ENTIRELY OR STILL RETURN TRUE? WHICH EXIT
+    command_free(command);
+    exit(0); 
   }
   else if (strcmp(command[0],"help" ) == 0){
-    printf("exit\nhelp\ncd\n");
+    //for help, print all built in commands
+    printf("exit\nhelp\ncd\njobs\n");
   }
   else if ((strcmp(command[0],"cd" ) == 0)){
+    //for cd, go to the path in the second argument if it exists
+    //if not, go to where "HOME" is 
     if (command[1] != NULL){
       chdir(command[1]);
     }
@@ -59,13 +55,14 @@ int shell_builtin(JobList* jobs, char** command) {
     }
   }
   else if ((strcmp(command[0],"jobs" ) == 0)){
-    job_iter(jobs, job_print);//DOUBLE CHECK 
+    //iterate through all current jobs 
+    job_iter(jobs, job_print);
   }
-  
   else {
     return 0;
   }
-
+  //if command is built in, free the command array 
+  command_free(command);
   return 1;
 }
 
@@ -86,15 +83,14 @@ int shell_builtin(JobList* jobs, char** command) {
  */
 int shell_wait_fg(pid_t pid) {
   int child_status;
-
+  //if waitpid returns an error, print error and exit
   if (-1 == waitpid(pid, &child_status, 0)){
     perror("Error");
     exit(-1);
     return 1;
   }
-
   return 0;
-}//DOES THIS RUN INTO PROBLEMS WITH ALWAYS RUNNING BACKGROUND JOBS????????
+}
 
 /**
  * Fork and exec the requested program in the foreground (Part 1)
@@ -117,46 +113,42 @@ int shell_wait_fg(pid_t pid) {
  */
 int shell_run_job(JobList* jobs, char** command, int foreground) {
   pid_t pid = fork();
-  JobStatus status;
-  if (foreground == 0) {
-    status = 3;
-  }
-  else{
-    status = 1;
-  }
-  Job* job = job_save(jobs, pid, command, status);
-
+  JobStatus status = 0;
+  //in the child, replace shell with command and print if there is an error
   if (pid == 0){
-    int ex = execvp(command[0], command);//QUESTION: ONCE THIS IS DOEN IS THE JOB DONE EXECUTING?
-    
-    if( ex == -1){
-      perror("Error");
-      exit(-1); 
-    }
-
+    execvp(command[0], command);
+    perror("Error");
+    command_free(command);
+    exit(-1); 
+  }
+  //in the parent, create the job and either print its status or wait for child if in the foreground then delete
+  else{
+    Job* job = job_save(jobs, pid, command, status);
     if (foreground == 0){
+      job_set_status(jobs, job, 3);
       job_print(jobs, job);
     }
-
     else{
+      shell_wait_fg(pid);
+      job_set_status(jobs, job, 2);
       job_delete(jobs, job);
     }
   }
-
-  else{
-    if (foreground ==1){//DOUBLE CHECK IF WE NEED TO SPECIFY HERE
-      shell_wait_fg(pid); 
-    }
-  }
-
   return 0;
 }
 
+//helper function to use in job_iter
+//Checks to see if a job has terminated, if so it prints deletes the job and terminates the zombie process
 void backJobHelp(JobList* jobs, Job* job){
-  if (waitpid(-1, WNOHANG) > 0){
+  int status;
+  //get the pid returned from waitpid
+  int currpid = waitpid(job->pid, &status, WNOHANG);
+  //if pid id the same and job pid and status is a valid pointer, print and delete job 
+  if(WIFEXITED(status) && currpid==job->pid){
     job_set_status(jobs, job, 4);
     job_print(jobs, job);
     job_delete(jobs, job);
+  }
 }
 
 /**
@@ -177,7 +169,6 @@ int main(int argc, char** argv) {
   //JOBLIST, 6.1
   JobList* mahJobs = joblist_create();
   
-  
   // Until ^D (EOF), read command line.
   char* line = NULL;
   while ((line = readline(PROMPT))) {
@@ -189,26 +180,24 @@ int main(int argc, char** argv) {
     char** command = command_parse(line, &fg);
     // Free command line.
     free(line);
-
-    // Replace me!  This just echos the command.
-    /*  if (command){
-      command_print(command); +      printf("\n");
-      // Currently, we free every command array immediately upon
-      // completion of the loop body.  WHEN YOU IMPLEMENT PART 2, YOU
-      // MUST RETHINK THIS.
-      command_free(command);
-      } */
-
-      int built = shell_builtin(mahJobs ,command);
+    if(command[0] != NULL){
+      //check to see if jobs are built in 
+      int built = shell_builtin(mahJobs, command);
+      //if not, preform job in sheel_run_job 
       if (built == 0){
-	shell_run_job(mahJobs, command, 0);
+	shell_run_job(mahJobs, command, fg);
       }
-      
+      //iterate through all saved jobs -> this will print and delete and terminated jobs
       job_iter(mahJobs, backJobHelp);
     }
+  }
   
   // If ^D (EOF), do the same thing as for the exit command.
   // ...
+
+  //free joblist 
+  joblist_empty(mahJobs);
+  joblist_free(mahJobs);
 
   return 0;
 }
