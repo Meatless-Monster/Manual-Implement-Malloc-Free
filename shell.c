@@ -16,6 +16,7 @@
 
 #include "command.h"
 #include "joblist.h"
+#include "terminal.h"
 
 #define NAME "shell"
 #define PROMPT "-> "
@@ -83,10 +84,14 @@ int shell_builtin(JobList* jobs, char** command) {
  */
 int shell_wait_fg(pid_t pid) {
   int child_status;
+  int currpid = waitpid(pid, &child_status, WUNTRACED);
   //if waitpid returns an error, print error and exit
-  if (-1 == waitpid(pid, &child_status, 0)){
+  if (currpid == -1){
     perror("Error");
     exit(-1);
+  }
+  //if process was stopped, return 1
+  else if (WIFSTOPPED(child_status) && currpid==pid){
     return 1;
   }
   return 0;
@@ -116,6 +121,7 @@ int shell_run_job(JobList* jobs, char** command, int foreground) {
   JobStatus status = 0;
   //in the child, replace shell with command and print if there is an error
   if (pid == 0){
+    term_child_init(jobs, foreground );
     execvp(command[0], command);
     perror("Error");
     command_free(command);
@@ -129,9 +135,20 @@ int shell_run_job(JobList* jobs, char** command, int foreground) {
       job_print(jobs, job);
     }
     else{
-      shell_wait_fg(pid);
-      job_set_status(jobs, job, 2);
-      job_delete(jobs, job);
+      term_give(jobs, job);
+      int fgret = shell_wait_fg(pid);
+      term_take(jobs, job);
+      //if the job is stopped, print job and set status to stopped
+      if (fgret == 1){
+	job_set_status(jobs, job, 2);
+	job_print(jobs, job);
+	return 1;
+      }
+      //for a normal foreground job
+      else{
+	job_set_status(jobs, job, 1);
+	job_delete(jobs, job);
+      }
     }
   }
   return 0;
@@ -168,7 +185,8 @@ int main(int argc, char** argv) {
 
   //JOBLIST, 6.1
   JobList* mahJobs = joblist_create();
-  
+  term_shell_init(mahJobs);
+
   // Until ^D (EOF), read command line.
   char* line = NULL;
   while ((line = readline(PROMPT))) {
